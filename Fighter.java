@@ -3,11 +3,10 @@ import org.osbot.rs07.api.map.Area;
 import org.osbot.rs07.api.map.Position;
 import org.osbot.rs07.api.model.GroundItem;
 import org.osbot.rs07.api.model.NPC;
-import org.osbot.rs07.api.Skills.*;
+import org.osbot.rs07.api.ui.Skill;
 import org.osbot.rs07.script.Script;
 import org.osbot.rs07.script.ScriptManifest;
 import org.osbot.rs07.utility.ConditionalSleep;
-import org.osbot.rs07.api.WorldHopper;
 import javax.swing.*;
 import java.awt.*;
 import java.time.Duration;
@@ -25,7 +24,7 @@ public class Fighter extends Script {
     private Instant startTime;
     private NPC currentTargetNPC;
     private basicAB antiBan;
-    private Random random = new Random();
+    private static Random random = new Random();
     private boolean isLooting;
 
     public void setHopWorlds(List<Integer> hopWorlds) {
@@ -228,15 +227,15 @@ public class Fighter extends Script {
         }
     }
 
-    private void handleBanking() {
-        if (enableEating && getSkills().getDynamic(Skills.HITPOINTS) <= eatBelowHealth) {
+    private void handleBanking() {if (
+            enableEating && getSkills().getDynamic(Skill.forId(3)) <= eatBelowHealth) {
             if (getInventory().contains(selectedFood)) {
                 log("Eating food...");
                 getInventory().getItem(selectedFood).interact("Eat");
                 new ConditionalSleep(5000) {
                     @Override
                     public boolean condition() {
-                        return getSkills().getDynamic(Skills.HITPOINTS) > eatBelowHealth;
+                        return getSkills().getDynamic(Skill.forId(3)) > eatBelowHealth;
                     }
                 }.sleep();
             } else {
@@ -279,21 +278,29 @@ public class Fighter extends Script {
         }
     }
 
-    private void hopWorld() {
+    private void hopWorld() throws InterruptedException {
         if (hopWorlds != null && !hopWorlds.isEmpty()) {
             int randomWorld = hopWorlds.get(random.nextInt(hopWorlds.size()));
             log("Hopping to world: " + randomWorld);
 
-            // Open the world hopper interface (example for OSBot; adjust if needed)
-            getTabs().open(Tab.LOGOUT);
+            // Open the world hopper interface (by clicking the logout tab if necessary)
+            getTabs().open(org.osbot.rs07.api.ui.Tab.LOGOUT);
             sleep(random(1000, 2000)); // Wait for the interface to open
 
-            // Find and select the world from the list
-            // Assuming world hopper is a direct clickable option, adjust this if needed
-            getDialogues().selectOption("World Hopping", randomWorld);
-            sleep(random(1000, 2000)); // Wait for the world to hop
+            // This might differ based on your OSBot version; ensure that the widget IDs and actions are correct
+            if (getWidgets().getWidgetContainingText("World Hopping") != null) {
+                getWidgets().getWidgetContainingText("World Hopping").interact("World Hopping");
+                sleep(random(1000, 2000)); // Wait for the world hopper to open
 
-            // Check if the world was successfully changed
+                // Select the world from the list
+                // Find the specific widget or button to select the world; this is a placeholder
+                getWidgets().getWidgetContainingText(Integer.toString(randomWorld)).interact("Select World");
+                sleep(random(1000, 2000)); // Wait for the world to switch
+            } else {
+                log("World Hopper widget not found.");
+            }
+
+            // Optionally verify if the world has been changed
             new ConditionalSleep(10000) {
                 @Override
                 public boolean condition() {
@@ -304,6 +311,7 @@ public class Fighter extends Script {
             log("No worlds to hop.");
         }
     }
+
 
 
     private void enableRunMode() {
@@ -338,7 +346,43 @@ public class Fighter extends Script {
         }
     }
 
-    private int random(int min, int max) {
+    public static int random(int min, int max) {
         return random.nextInt(max - min + 1) + min;
     }
+    public void setEnableEating(boolean enableEating) {
+        this.enableEating = enableEating;
+    }
+
+    public void setSelectedFood(String selectedFood) {
+        this.selectedFood = selectedFood;
+    }
+
+    public void setEatBelowHealth(int eatBelowHealth) {
+        this.eatBelowHealth = eatBelowHealth;
+    }
+
+    public void setWithdrawFoodAmount(int withdrawFoodAmount) {
+        this.withdrawFoodAmount = withdrawFoodAmount;
+    }
+
+    public void setHopForPlayers(boolean hopForPlayers) {
+        this.hopForPlayers = hopForPlayers;
+    }
+
+    public void setEnableRun(boolean enableRun) {
+        this.enableRun = enableRun;
+    }
+
+    public void setSelectedNPC(String selectedNPC) {
+        this.selectedNPC = selectedNPC;
+    }
+
+    public void setEnableLooting(boolean enableLooting) {
+        this.enableLooting = enableLooting;
+    }
+
+    public void setItemsToLoot(List<String> itemsToLoot) {
+        this.itemsToLoot = itemsToLoot;
+    }
+
 }
