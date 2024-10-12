@@ -1,3 +1,5 @@
-Old school runescape Automatic Oak Banker.
+Taking advantage of OSBOT API calls to automate gaming.  
 
-Takes advantage of OSBOT API calls to automate gaming.
+Current projects for OSBot:
+  -WildernessSlayer
+  -Vet'ion
