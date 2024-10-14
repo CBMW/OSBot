@@ -1,8 +1,13 @@
+/*
+* This eating handler will run parralel to main class loop.
+* Will start and stop on Onstart() and onExit()
+* Written by yours truly... Does need some work though
+*/
+
 package utils;
 
 import org.osbot.rs07.api.ui.Skill;
 import org.osbot.rs07.script.Script;
-
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -12,7 +17,7 @@ public class EatingHandler implements Runnable {
     private final int eatBelowHP;
     private final String food;
     private final AtomicBoolean running;
-    private Thread thread; // Track the thread for proper management
+    private Thread thread; 
 
     public EatingHandler(Script script, int eatBelowHP, String food) {
         this.script = script;
@@ -31,11 +36,10 @@ public class EatingHandler implements Runnable {
                     break;
                 }
                 checkHealthAndEat();
-                // Sleep for 1 second between checks
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
                 script.log("EatingHandler thread interrupted.");
-                stop(); // Ensure we stop the handler cleanly if interrupted
+                stop();
             } catch (Exception e) {
                 logException(e);
             }
@@ -62,7 +66,7 @@ public class EatingHandler implements Runnable {
             script.log("Attempting to eat food...");
             if (script.getInventory().interact("Eat", food)) {
                 script.log("Successfully ate: " + food);
-                script.sleep(600);  // Mimic eating time
+                script.sleep(600);  // Mimic eating time 600ms = 1 game tick
                 return true;
             } else {
                 script.log("Failed to eat: " + food);
@@ -72,8 +76,8 @@ public class EatingHandler implements Runnable {
         }
         return false;
     }
-
-    private void waitForRespawn() throws InterruptedException {
+    
+    private void waitForRespawn() throws InterruptedException { //Method to wait until death animation completes
         new org.osbot.rs07.utility.ConditionalSleep(30000) {
             @Override
             public boolean condition() {
