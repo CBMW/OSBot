@@ -2,10 +2,10 @@
 Taking advantage of OSBOT API calls to automate gaming.  
 
 ## Current projects for OSBot:  
-  -WildernessSlayer  
-  -Vet'ion  
+* WildernessSlayer  
+* Vet'ion  
 
-## Released (Open source
+## Released (Open source)
 * Oakbanker {Chops and banks Oak logs}  
 * Oakburner {Chops and burns Oak logs anywhere}  
 * SplashAlcher {Splashes stun & Alchs for epic magic xp/no hp xp}  
