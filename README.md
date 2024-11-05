@@ -9,4 +9,5 @@ Taking advantage of OSBOT API calls to automate gaming.
 * Oakbanker {Chops and banks Oak logs}  
 * Oakburner {Chops and burns Oak logs anywhere}  
 * SplashAlcher {Splashes stun & Alchs for epic magic xp/no hp xp}  
-* CowhideLooter {Loots and banks cowhides in lumbridge}  
+* CowhideLooter {Loots and banks cowhides in lumbridge}
+* Fighter {Trains accounts with F2P Mobs}
