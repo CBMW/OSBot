@@ -1,75 +1,54 @@
 package scripts;
 
+import states.CowhideLooterStates;
+
+
+import utils.Walker;
+
+import org.osbot.rs07.api.ui.World;
 import org.osbot.rs07.api.model.GroundItem;
 import org.osbot.rs07.api.map.Area;
 import org.osbot.rs07.api.map.Position;
 import org.osbot.rs07.script.Script;
 import org.osbot.rs07.script.ScriptManifest;
 import org.osbot.rs07.utility.ConditionalSleep;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.Graphics2D;
-import java.util.Arrays;
+
+import java.awt.*;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import utils.EnableRun;  // Importing the EnableRun class
 
-@ScriptManifest(name = "Cowhide Looter", author = "Dubai", version = 1.0, info = "Loots cowhides in Lumbridge", logo = "")
+@ScriptManifest(name = "Cowhide Looter", author = "Dubai", version = 2.0, info = "Loots cowhides in Lumbridge", logo = "")
 public class CowhideLooter extends Script {
 
-    private enum State {
-        WALKING2COWS, LOOTING, CHANGING_AREA, HOPPING_WORLDS, WALKING2BANK, DEPOSITING
+    public enum State {
+        WALKING_TO_COWS, LOOTING, CHANGING_AREA, HOPPING_WORLDS, WALKING_TO_BANK, DEPOSITING
     }
 
-    private State currentState;
-    private int cowhidesLooted = 0;
-    private long startTime;
+    private CowhideLooterStates stateHandler; // State handler
+    public final Walker walker = new Walker(this);
 
-    private Area area1 = new Area(new Position(3253, 3255, 0), new Position(3265, 3268, 0));
-    private Area area2 = new Area(new Position(3254, 3269, 0), new Position(3265, 3295, 0));
-    private Area lumbridgeBank = new Area(new Position(3207, 3217, 2), new Position(3210, 3220, 2));
+    public int cowhidesLooted = 0;
+    public long startTime;
 
-    private List<Integer> f2pWorlds = Arrays.asList(
-            301, 308, 316, 326, 335, 382, 383, 393, 394, 395, 396, 397, 398, 399
-    );
-
-    private EnableRun enableRun;  // Create instance of EnableRun class
-    private Random random = new Random();  // Instantiate Random object
+    // Areas
+    public final Area area1 = new Area(new Position(3253, 3255, 0), new Position(3265, 3268, 0));
+    public final Area area2 = new Area(new Position(3254, 3269, 0), new Position(3265, 3295, 0));
+    public final Area lumbridgeBank = new Area(new Position(3207, 3217, 2), new Position(3210, 3220, 2));
 
     @Override
     public void onStart() {
         log("Cowhide Looter script started.");
-        currentState = State.WALKING2COWS;
         startTime = System.currentTimeMillis();
-        enableRun = new EnableRun(this);  // Initialize EnableRun instance
+        stateHandler = new CowhideLooterStates(this); // Initialize state handler
+        determineStartState();
     }
 
     @Override
     public int onLoop() throws InterruptedException {
-        switch (currentState) {
-            case WALKING2COWS:
-                walkToCows();
-                break;
-            case LOOTING:
-                lootCowhides();
-                break;
-            case CHANGING_AREA:
-                changeArea();
-                break;
-            case HOPPING_WORLDS:
-                hopWorlds();
-                break;
-            case WALKING2BANK:
-                walkToBank();
-                break;
-            case DEPOSITING:
-                depositCowhides();
-                break;
-        }
-        return 1000;
+        return stateHandler.handleState(); // Delegate state handling
     }
 
     @Override
@@ -86,27 +65,24 @@ public class CowhideLooter extends Script {
         g.drawString("Runtime: " + formatTime(runtime), 10, 45);
     }
 
-    private void walkToCows() {
-        enableRun.enableRunMode();  // Activate run only when walking to cows or bank
-        if (!area1.contains(myPlayer()) && !area2.contains(myPlayer())) {
-            getWalking().webWalk(area1);
+    public void determineStartState() {
+        if (getInventory().isFull()) {
+            stateHandler.setCurrentState(State.WALKING_TO_BANK);
+        } else if (area1.contains(myPlayer()) || area2.contains(myPlayer())) {
+            stateHandler.setCurrentState(State.LOOTING);
         } else {
-            log("Arrived at cow area.");
-            currentState = State.LOOTING;
+            stateHandler.setCurrentState(State.WALKING_TO_COWS);
         }
     }
 
-    private long lastCowhideSearchTime = 0;  // Variable to track time spent searching
+    public void walkToCows() {
+        walker.walkToArea(area1, "Walking to cow area");
+        stateHandler.setCurrentState(State.LOOTING);
+    }
 
-    private void lootCowhides() throws InterruptedException {
+    public void lootCowhides() throws InterruptedException {
         GroundItem cowhide = getGroundItems().closest("Cowhide");
-
-        if (lastCowhideSearchTime == 0) {
-            lastCowhideSearchTime = System.currentTimeMillis();
-        }
-
         if (cowhide != null && cowhide.exists()) {
-            lastCowhideSearchTime = 0;  // Reset the timer as cowhide was found
             if (cowhide.interact("Take")) {
                 new ConditionalSleep(5000) {
                     @Override
@@ -117,60 +93,58 @@ public class CowhideLooter extends Script {
                 cowhidesLooted++;
             }
         } else {
-            // Check if no cowhides are found after 10 seconds
-            if (System.currentTimeMillis() - lastCowhideSearchTime > 10000) {
-                if (area1.contains(myPlayer()) || area2.contains(myPlayer())) {
-                    currentState = State.CHANGING_AREA;
-                } else {
-                    currentState = State.HOPPING_WORLDS;
-                }
-                lastCowhideSearchTime = 0;
-            }
+            stateHandler.setCurrentState(State.CHANGING_AREA);
         }
 
         if (getInventory().isFull()) {
-            currentState = State.WALKING2BANK;
+            stateHandler.setCurrentState(State.WALKING_TO_BANK);
         }
     }
 
-    private void changeArea() {
-        enableRun.enableRunMode();  // Activate run when changing areas
-        if (area1.contains(myPlayer())) {
-            getWalking().webWalk(area2.getRandomPosition());
-        } else {
-            getWalking().webWalk(area1.getRandomPosition());
-        }
-        currentState = State.LOOTING;
+    public void changeArea() {
+        walker.walkToArea(area1.contains(myPlayer()) ? area2 : area1, "Changing cow area");
+        stateHandler.setCurrentState(State.LOOTING);
     }
 
-    private void hopWorlds() throws InterruptedException {
+    public void hopWorlds() throws InterruptedException {
         int currentWorld = getWorlds().getCurrentWorld();
-        List<Integer> availableWorlds = f2pWorlds.stream()
-                .filter(world -> world != currentWorld)
+        Random random = new Random();
+    
+        // Dynamically fetch all available worlds
+        List<World> availableWorlds = getWorlds().getAvailableWorlds(true).stream()
+                .filter(world -> !world.isPvpWorld()) // Exclude PvP worlds
+                .filter(world -> !world.isMembers()) // Exclude members-only worlds
+                .filter(world -> world.getId() != currentWorld) // Exclude the current world
+                .filter(world -> !world.isFull()) // Exclude full worlds
                 .collect(Collectors.toList());
-        int randomWorld = availableWorlds.get(random.nextInt(availableWorlds.size()));
-        if (getWorlds().hop(randomWorld)) {
-            new ConditionalSleep(10000) {
-                @Override
-                public boolean condition() {
-                    return getWorlds().getCurrentWorld() == randomWorld;
-                }
-            }.sleep();
-        }
-        currentState = State.WALKING2COWS;
-    }
-
-    private void walkToBank() {
-        enableRun.enableRunMode();  // Activate run only when walking to cows or bank
-        if (!lumbridgeBank.contains(myPlayer())) {
-            getWalking().webWalk(lumbridgeBank);
+    
+        if (!availableWorlds.isEmpty()) {
+            // Select a random world from the filtered list
+            World randomWorld = availableWorlds.get(random.nextInt(availableWorlds.size()));
+    
+            // Attempt to hop to the selected world
+            if (getWorlds().hop(randomWorld.getId())) {
+                new ConditionalSleep(10000) {
+                    @Override
+                    public boolean condition() {
+                        return getWorlds().getCurrentWorld() == randomWorld.getId();
+                    }
+                }.sleep();
+                log("Hopped to world " + randomWorld.getId());
+            }
         } else {
-            log("Arrived at Lumbridge bank.");
-            currentState = State.DEPOSITING;
+            log("No available F2P worlds to hop to.");
         }
+    
+        stateHandler.setCurrentState(State.WALKING_TO_COWS); // Update the state
+    }
+    
+    public void walkToBank() {
+        walker.walkToArea(lumbridgeBank, "Walking to Lumbridge bank");
+        stateHandler.setCurrentState(State.DEPOSITING);
     }
 
-    private void depositCowhides() throws InterruptedException {
+    public void depositCowhides() throws InterruptedException {
         if (getBank().isOpen()) {
             getBank().depositAll("Cowhide");
             new ConditionalSleep(5000) {
@@ -179,7 +153,7 @@ public class CowhideLooter extends Script {
                     return !getInventory().contains("Cowhide");
                 }
             }.sleep();
-            currentState = State.WALKING2COWS;
+            stateHandler.setCurrentState(State.WALKING_TO_COWS);
         } else {
             getBank().open();
             new ConditionalSleep(5000) {
@@ -191,7 +165,7 @@ public class CowhideLooter extends Script {
         }
     }
 
-    private String formatTime(long ms) {
+    public String formatTime(long ms) {
         long sec = TimeUnit.MILLISECONDS.toSeconds(ms) % 60;
         long min = TimeUnit.MILLISECONDS.toMinutes(ms) % 60;
         long hr = TimeUnit.MILLISECONDS.toHours(ms) % 24;
