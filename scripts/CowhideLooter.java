@@ -1,8 +1,6 @@
 package scripts;
 
 import states.CowhideLooterStates;
-
-
 import utils.Walker;
 
 import org.osbot.rs07.api.ui.World;
