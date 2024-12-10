@@ -1,0 +1,351 @@
+package goldfarming;
+
+import org.osbot.rs07.api.map.Area;
+import org.osbot.rs07.api.map.Position;
+import org.osbot.rs07.api.model.Entity;
+import org.osbot.rs07.api.model.Item;
+import org.osbot.rs07.api.model.Player;
+import org.osbot.rs07.api.ui.Message;
+import org.osbot.rs07.api.ui.Skill;
+import org.osbot.rs07.listener.MessageListener;
+import org.osbot.rs07.script.Script;
+import org.osbot.rs07.script.ScriptManifest;
+import org.osbot.rs07.utility.ConditionalSleep;
+import utils.EnableRun;
+
+import java.awt.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@ScriptManifest(info = "Chops down normal trees and banks logs", version = 3.0, name = "Normal Tree Banker", author = "Dubai", logo = "yourLogoURL")
+public class NormalTreeBanker extends Script implements MessageListener {
+
+    private enum State {
+        CHOPPING, WALKING_TO_BANK, BANKING, WALKING_TO_TREES, RUNNING_AWAY, STUCK
+    }
+
+    private State currentState = State.WALKING_TO_TREES;
+
+    // Normal tree IDs
+    private final int[] TREE_IDS = {1276, 1278};
+
+    // Axe names to keep
+    private final List<String> AXE_NAMES = Arrays.asList(
+            "Bronze axe", "Iron axe", "Steel axe", "Black axe",
+            "Mithril axe", "Adamant axe", "Rune axe", "Dragon axe"
+    );
+
+    private EnableRun enableRun;
+
+    private int startingXP;
+    private int startingLevel;
+    private Instant startTime;
+
+    private boolean inventoryFull = false;
+    private boolean cannotReachTarget = false;
+    private boolean teleportCooldownActive = false;
+
+    @Override
+    public void onStart() {
+        log("Starting Normal Tree Banker script...");
+        enableRun = new EnableRun(this);
+
+        startingXP = skills.getExperience(Skill.WOODCUTTING);
+        startingLevel = skills.getStatic(Skill.WOODCUTTING);
+        startTime = Instant.now();
+    }
+
+    @Override
+    public int onLoop() throws InterruptedException {
+        enableRun.enableRunMode();
+
+        State nextState = determineState();
+        log("Current State: " + nextState);
+
+        switch (nextState) {
+            case CHOPPING:
+                chopTrees();
+                break;
+            case WALKING_TO_BANK:
+                walkToBank();
+                break;
+            case BANKING:
+                depositLogs();
+                break;
+            case WALKING_TO_TREES:
+                walkToTrees();
+                break;
+            case RUNNING_AWAY:
+                runAway();
+                break;
+            case STUCK:
+                handleStuck();
+                break;
+        }
+
+        currentState = nextState;
+        return random(800, 1200);
+    }
+
+    private State determineState() {
+        if (isUnderAttack()) {
+            return State.RUNNING_AWAY;
+        }
+
+        if (cannotReachTarget) {
+            return State.STUCK;
+        }
+
+        // If inventory is full or we explicitly know logs are full
+        if (inventory.isFull() || inventoryFull) {
+            return playerInBankArea() ? State.BANKING : State.WALKING_TO_BANK;
+        }
+
+        // If not full, attempt to chop
+        Entity tree = getClosestReachableTree();
+        if (tree != null) {
+            return State.CHOPPING;
+        } else {
+            return State.WALKING_TO_TREES;
+        }
+    }
+
+    private boolean playerInBankArea() {
+        return getClosestBankArea().contains(myPosition());
+    }
+
+    private boolean isUnderAttack() {
+        Player localPlayer = myPlayer();
+        return localPlayer != null && localPlayer.isUnderAttack();
+    }
+
+    private Area getClosestBankArea() {
+        List<Area> bankAreas = Arrays.asList(
+                new Area(3180, 3430, 3190, 3440),  // Varrock West Bank
+                new Area(3010, 3354, 3016, 3357),  // Falador East Bank
+                new Area(2944, 3368, 2947, 3371),  // Falador West Bank
+                new Area(3162, 3476, 3170, 3484)   // Grand Exchange
+        );
+
+        Position currentPosition = myPosition();
+        Area closestBank = bankAreas.get(0);
+        double minDistance = currentPosition.distance(closestBank.getRandomPosition());
+
+        for (Area bankArea : bankAreas) {
+            double distance = currentPosition.distance(bankArea.getRandomPosition());
+            if (distance < minDistance) {
+                closestBank = bankArea;
+                minDistance = distance;
+            }
+        }
+        return closestBank;
+    }
+
+    private Entity getClosestReachableTree() {
+        return getObjects().closest(obj ->
+                obj != null && Arrays.stream(TREE_IDS).anyMatch(id -> obj.getId() == id)
+                        && obj.hasAction("Chop down"));
+    }
+
+    private void chopTrees() throws InterruptedException {
+        Entity tree = getClosestReachableTree();
+        if (tree == null) {
+            log("No tree found nearby, switching to WALKING_TO_TREES...");
+            currentState = State.WALKING_TO_TREES;
+            return;
+        }
+
+        if (!myPlayer().isAnimating()) {
+            log("Chopping tree at: " + tree.getPosition());
+            if (tree.interact("Chop down")) {
+                new ConditionalSleep(5000) {
+                    @Override
+                    public boolean condition() {
+                        return myPlayer().isAnimating() || inventory.isFull();
+                    }
+                }.sleep();
+                // If inventory gets full during chopping, next iteration will handle it
+            } else {
+                log("Failed to interact with tree.");
+            }
+        }
+    }
+
+    private void walkToBank() throws InterruptedException {
+        Area bankArea = getClosestBankArea();
+        if (bankArea.contains(myPosition())) {
+            log("Arrived at bank area, switching to BANKING state.");
+            currentState = State.BANKING;
+        } else {
+            log("Walking to nearest bank...");
+            getWalking().webWalk(bankArea);
+        }
+    }
+
+    private void depositLogs() throws InterruptedException {
+        if (!getBank().isOpen()) {
+            if (getBank().open()) {
+                new ConditionalSleep(5000) {
+                    @Override
+                    public boolean condition() {
+                        return getBank().isOpen();
+                    }
+                }.sleep();
+            } else {
+                log("Failed to open bank. Retrying...");
+                return;
+            }
+        }
+
+        if (getBank().isOpen()) {
+            log("Depositing logs...");
+            depositAllExceptAxes();
+            new ConditionalSleep(3000) {
+                @Override
+                public boolean condition() {
+                    return !inventory.contains("Logs");
+                }
+            }.sleep();
+
+            inventoryFull = false;
+            getBank().close();
+
+            // After depositing, go find more trees
+            currentState = State.WALKING_TO_TREES;
+        }
+    }
+
+    private void depositAllExceptAxes() throws InterruptedException {
+        // Deposit all items except for axes
+        if (getBank().isOpen()) {
+            List<String> axeItemsInInv = Arrays.stream(inventory.getItems())
+                    .filter(item -> item != null && AXE_NAMES.contains(item.getName()))
+                    .map(Item::getName)
+                    .collect(Collectors.toList());
+
+            if (axeItemsInInv.isEmpty()) {
+                getBank().depositAll();
+            } else {
+                getBank().depositAllExcept(axeItemsInInv.toArray(new String[0]));
+            }
+            sleep(random(800, 1200));
+        }
+    }
+
+    private void walkToTrees() throws InterruptedException {
+        // Try to find a tree nearby
+        Entity tree = getClosestReachableTree();
+        if (tree != null) {
+            log("Tree found nearby, switching to CHOPPING.");
+            currentState = State.CHOPPING;
+            return;
+        }
+
+        // If no tree found, move to a random nearby area to find trees
+        Area randomArea = getRandomNearbyArea();
+        log("No trees visible, moving to a new random area: " + randomArea.toString());
+        getWalking().webWalk(randomArea);
+    }
+
+    private Area getRandomNearbyArea() {
+        int currentX = myPosition().getX();
+        int currentY = myPosition().getY();
+        Random random = new Random();
+
+        int randomXOffset = random.nextInt(50) - 25;
+        int randomYOffset = random.nextInt(50) - 25;
+
+        return new Area(
+                currentX + randomXOffset, currentY + randomYOffset,
+                currentX + randomXOffset + 1, currentY + randomYOffset + 1
+        );
+    }
+
+    private void runAway() throws InterruptedException {
+        log("Under attack! Running away...");
+        enableRun.enableRunMode();
+
+        Random rand = new Random();
+        int randomXOffset = rand.nextInt(50) - 25;
+        int randomYOffset = rand.nextInt(50) - 25;
+        getWalking().walk(myPosition().translate(randomXOffset, randomYOffset));
+        sleep(random(2000, 4000));
+
+        // After running away, try to find a tree again
+        currentState = State.WALKING_TO_TREES;
+    }
+
+    private void handleStuck() throws InterruptedException {
+        log("Character stuck. Attempting to teleport or move away...");
+        // Attempt Lumbridge Home Teleport if available
+        if (!teleportCooldownActive && castLumbridgeHomeTeleport()) {
+            // After teleport, just walk to trees again
+            currentState = State.WALKING_TO_TREES;
+        } else {
+            log("Teleport on cooldown or failed. Trying to walk somewhere else...");
+            getWalking().webWalk(getRandomNearbyArea());
+            currentState = State.WALKING_TO_TREES;
+        }
+    }
+
+    private boolean castLumbridgeHomeTeleport() throws InterruptedException {
+        // Attempt to cast Lumbridge Home Teleport
+        final int MAGIC_SPELLBOOK_GROUP_ID = 218;
+        final int LUMBRIDGE_HOME_TELEPORT_WIDGET_ID = 1;
+
+        if (getWidgets().isVisible(MAGIC_SPELLBOOK_GROUP_ID, LUMBRIDGE_HOME_TELEPORT_WIDGET_ID)) {
+            if (getWidgets().interact(MAGIC_SPELLBOOK_GROUP_ID, LUMBRIDGE_HOME_TELEPORT_WIDGET_ID, "Cast")) {
+                sleep(random(3000, 5000));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void onExit() {
+        log("Stopping Normal Tree Banker script...");
+        int levelsGained = skills.getStatic(Skill.WOODCUTTING) - startingLevel;
+        log("Levels gained: " + levelsGained);
+    }
+
+    @Override
+    public void onPaint(Graphics2D g) {
+        Duration runtime = Duration.between(startTime, Instant.now());
+        long seconds = runtime.getSeconds() % 60;
+        long minutes = (runtime.getSeconds() / 60) % 60;
+        long hours = runtime.getSeconds() / 3600;
+
+        int currentLevel = skills.getStatic(Skill.WOODCUTTING);
+        int levelsGained = currentLevel - startingLevel;
+
+        // Draw info box
+        g.setColor(new Color(0, 0, 0, 150));
+        g.fillRect(5, 20, 170, 60);
+
+        g.setColor(Color.WHITE);
+        g.drawString("Normal Tree Banker v3", 10, 35);
+        g.drawString("Runtime: " + String.format("%02d:%02d:%02d", hours, minutes, seconds), 10, 50);
+        g.drawString("Levels Gained: " + levelsGained, 10, 65);
+    }
+
+    @Override
+    public void onMessage(Message message) {
+        if (message.getType() == Message.MessageType.GAME) {
+            String txt = message.getMessage();
+            if (txt.contains("Your inventory is too full to hold any more logs.")) {
+                log("Detected full inventory message.");
+                inventoryFull = true;
+            } else if (txt.contains("I can't reach that!")) {
+                log("'I can't reach that!' message detected.");
+                cannotReachTarget = true;
+            } else if (txt.matches("You need to wait another \\d+ minute\\(s\\) to cast this spell")) {
+                log("Detected Lumbridge Home Teleport cooldown message.");
+                teleportCooldownActive = true;
+            }
+        }
+    }
+}
