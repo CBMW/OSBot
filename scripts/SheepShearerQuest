@@ -1,0 +1,214 @@
+package quests;
+
+import org.osbot.rs07.api.model.NPC;
+import org.osbot.rs07.api.model.RS2Object;
+import org.osbot.rs07.script.Script;
+import org.osbot.rs07.script.ScriptManifest;
+import org.osbot.rs07.utility.ConditionalSleep;
+import org.osbot.rs07.api.map.Area;
+
+import utils.EnableRun; //replace with walker method
+
+import java.awt.event.KeyEvent;
+
+@ScriptManifest(name = "Sheep Shearer Quest", author = "Dubai", version = 1.0, info = "Completes The Sheep Shearer quest", logo = "")
+public class SheepShearerQuest extends Script {
+
+    private enum State {
+        START_QUEST, SHEAR_SHEEP, SPIN_WOOL, RETURN_WOOL, COMPLETE
+    }
+
+    private State currentState;
+    private EnableRun enableRun;
+
+    private Area fredsHouse = new Area(3189, 3271, 3192, 3274);
+    private Area sheepPen = new Area(3195, 3259, 3208, 3273);
+    private Area spinningRoom = new Area(3207, 3209, 3211, 3215).setPlane(1);
+    private int woolCount = 20;
+
+    // Sheep IDs
+    private int[] sheepIds = {2786, 2699, 2693, 1264};
+
+    @Override
+    public void onStart() {
+        log("Sheep Shearer script started.");
+        enableRun = new EnableRun(this);
+        if (getInventory().getAmount("Ball of wool") >= woolCount) {
+            currentState = State.RETURN_WOOL;
+        } else {
+            currentState = State.START_QUEST;
+        }
+        log("Initial state set to: " + currentState);
+    }
+
+    @Override
+    public int onLoop() throws InterruptedException {
+        enableRun.enableRunMode();
+        log("Current state: " + currentState);
+        switch (currentState) {
+            case START_QUEST:
+                startQuest();
+                break;
+            case SHEAR_SHEEP:
+                shearSheep();
+                break;
+            case SPIN_WOOL:
+                spinWool();
+                break;
+            case RETURN_WOOL:
+                returnWool();
+                break;
+            case COMPLETE:
+                log("Quest complete!");
+                stop();
+                break;
+        }
+        return 1000;
+    }
+
+    private void startQuest() throws InterruptedException {
+        log("Entering startQuest method.");
+        if (!fredsHouse.contains(myPlayer())) {
+            log("Walking to Fred's house.");
+            getWalking().webWalk(fredsHouse);
+        } else {
+            NPC fred = getNpcs().closest("Fred the Farmer");
+            if (fred != null) {
+                log("Talking to Fred the Farmer.");
+                if (fred.interact("Talk-to")) {
+                    new ConditionalSleep(5000) {
+                        @Override
+                        public boolean condition() {
+                            return getDialogues().inDialogue();
+                        }
+                    }.sleep();
+                    if (getDialogues().inDialogue()) {
+                        getDialogues().completeDialogue("I'm looking for a quest.", "Yes");
+                        currentState = State.SHEAR_SHEEP;
+                    }
+                }
+            } else {
+                log("Fred the Farmer not found.");
+            }
+        }
+    }
+
+    private void shearSheep() throws InterruptedException {
+        log("Entering shearSheep method.");
+
+        if (!sheepPen.contains(myPlayer())) {
+            log("Walking to the sheep pen.");
+            getWalking().webWalk(sheepPen);
+        } else {
+            log("Inside the sheep pen.");
+            log("Finding sheep to shear.");
+            NPC sheep = getNpcs().closest(npc -> {
+                for (int id : sheepIds) {
+                    if (npc.getId() == id && npc.hasAction("Shear")) {
+                        log("Found sheep with ID: " + id);
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            if (sheep != null) {
+                log("Interacting with a sheep to shear it.");
+                if (sheep.interact("Shear")) {
+                    new ConditionalSleep(5000) {
+                        @Override
+                        public boolean condition() {
+                            return getInventory().contains("Wool");
+                        }
+                    }.sleep();
+                }
+                if (getInventory().getAmount("Wool") >= woolCount) {
+                    log("Collected enough wool. Moving to the next state.");
+                    currentState = State.SPIN_WOOL;
+                }
+            } else {
+                log("No sheep found to shear.");
+            }
+        }
+    }
+
+    private void spinWool() throws InterruptedException {
+        log("Entering spinWool method.");
+        RS2Object door = getObjects().closest(obj -> obj.getX() == 3207 && obj.getY() == 3214 && obj.getZ() == 1 && obj.hasAction("Open"));
+
+        if (door != null && door.exists() && door.hasAction("Open")) {
+            log("Opening the door to enter the spinning room.");
+            if (door.interact("Open")) {
+                new ConditionalSleep(5000) {
+                    @Override
+                    public boolean condition() {
+                        return !door.exists() || door.hasAction("Close");
+                    }
+                }.sleep();
+            }
+        } else if (!spinningRoom.contains(myPlayer())) {
+            log("Walking to the spinning room.");
+            getWalking().webWalk(spinningRoom);
+        } else {
+            RS2Object spinningWheel = getObjects().closest("Spinning wheel");
+            if (spinningWheel != null) {
+                log("Interacting with the spinning wheel.");
+                if (spinningWheel.interact("Spin")) {
+                    new ConditionalSleep(5000) {
+                        @Override
+                        public boolean condition() {
+                            return getDialogues().inDialogue();
+                        }
+                    }.sleep();
+                    if (getDialogues().inDialogue()) {
+                        log("Selecting the spin wool option.");
+                        getKeyboard().pressKey((char) KeyEvent.VK_SPACE); // Press space bar to select the first option
+                        new ConditionalSleep(15000) { // Wait for spinning to complete
+                            @Override
+                            public boolean condition() {
+                                return getInventory().getAmount("Wool") == 0 && getInventory().getAmount("Ball of wool") >= woolCount;
+                            }
+                        }.sleep();
+                        if (getInventory().getAmount("Ball of wool") >= woolCount) {
+                            log("Spun enough wool into balls. Moving to the next state.");
+                            currentState = State.RETURN_WOOL;
+                        } else {
+                            log("Not enough wool spun or inventory not updated.");
+                        }
+                    } else {
+                        log("Could not enter dialogue with the spinning wheel.");
+                    }
+                }
+            } else {
+                log("Spinning wheel not found.");
+            }
+        }
+    }
+    private void returnWool() throws InterruptedException {
+        log("Entering returnWool method.");
+        if (!fredsHouse.contains(myPlayer())) {
+            log("Walking back to Fred's house.");
+            getWalking().webWalk(fredsHouse);
+        } else {
+            NPC fred = getNpcs().closest("Fred the Farmer");
+            if (fred != null) {
+                log("Talking to Fred the Farmer to return the wool.");
+                if (fred.interact("Talk-to")) {
+                    new ConditionalSleep(5000) {
+                        @Override
+                        public boolean condition() {
+                            return getDialogues().inDialogue();
+                        }
+                    }.sleep();
+                    if (getDialogues().inDialogue()) {
+                        getDialogues().completeDialogue("I have some balls of wool.");
+                        log("Quest complete. Moving to the COMPLETE state.");
+                        currentState = State.COMPLETE;
+                    }
+                }
+            } else {
+                log("Fred the Farmer not found.");
+            }
+        }
+    }
+}
