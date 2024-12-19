@@ -3,7 +3,8 @@ Taking advantage of OSBOT API calls to automate gaming.
 
 ## Current projects for OSBot:  
 * WildernessSlayer  
-* Vet'ion  
+* Vet'ion
+* AntFarm
 
 ## Released (Open source)
 * Oakbanker {Chops and banks Oak logs}  
